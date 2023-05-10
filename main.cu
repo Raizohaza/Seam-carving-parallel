@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdint.h>
-#include "./src/library.h"
 
 using namespace std;
 
@@ -14,6 +13,246 @@ __constant__ int d_xSobel[9] = {1, 0, -1, 2, 0, -2, 1, 0, -1};
 __constant__ int d_ySobel[9] = {1, 2, 1, 0, 0, 0, -1, -2, -1};
 const int filterWidth = 3;
 
+#define CHECK(call)\
+{\
+	const cudaError_t error = call;\
+	if (error != cudaSuccess)\
+	{\
+		fprintf(stderr, "Error: %s:%d, ", __FILE__, __LINE__);\
+		fprintf(stderr, "code: %d, reason: %s\n", error,\
+				cudaGetErrorString(error));\
+		exit(EXIT_FAILURE);\
+	}\
+}
+float computeError(uchar3 * a1, uchar3 * a2, int n) {
+    float err = 0;
+    for (int i = 0; i < n; i++) {
+        err += abs((int)a1[i].x - (int)a2[i].x);
+        err += abs((int)a1[i].y - (int)a2[i].y);
+        err += abs((int)a1[i].z - (int)a2[i].z);
+    }
+    err /= (n * 3);
+    return err;
+}
+
+
+void printError(char * msg, uchar3 * in1, uchar3 * in2, int width, int height) {
+	float err = computeError(in1, in2, width * height);
+	printf("%s: %f\n", msg, err);
+}
+
+void printDeviceInfo() {
+    cudaDeviceProp devProv;
+    CHECK(cudaGetDeviceProperties(&devProv, 0));
+    printf("_____________GPU info_____________\n");
+    printf("|Name:                   %s|\n", devProv.name);
+    printf("|Compute capability:          %d.%d|\n", devProv.major, devProv.minor);
+    printf("|Num SMs:                      %d|\n", devProv.multiProcessorCount);
+    printf("|Max num threads per SM:     %d|\n", devProv.maxThreadsPerMultiProcessor); 
+    printf("|Max num warps per SM:         %d|\n", devProv.maxThreadsPerMultiProcessor / devProv.warpSize);
+    printf("|GMEM:           %zu byte|\n", devProv.totalGlobalMem);
+    printf("|SMEM per SM:          %zu byte|\n", devProv.sharedMemPerMultiprocessor);
+    printf("|SMEM per block:       %zu byte|\n", devProv.sharedMemPerBlock);
+    printf("|________________________________|\n");
+}
+
+struct GpuTimer
+{
+	cudaEvent_t start;
+	cudaEvent_t stop;
+
+	GpuTimer()
+	{
+		cudaEventCreate(&start);
+		cudaEventCreate(&stop);
+	}
+
+	~GpuTimer()
+	{
+		cudaEventDestroy(start);
+		cudaEventDestroy(stop);
+	}
+
+	void Start()
+	{
+		cudaEventRecord(start, 0);                                                                 
+		cudaEventSynchronize(start);
+	}
+
+	void Stop()
+	{
+		cudaEventRecord(stop, 0);
+	}
+
+	float Elapsed()
+	{
+		float elapsed;
+		cudaEventSynchronize(stop);
+		cudaEventElapsedTime(&elapsed, start, stop);
+		return elapsed;
+	}
+	 void printTime(char * s) {
+        printf("Processing time of %s: %f ms\n\n", s, Elapsed());
+    }
+};
+
+void readPnm(char * fileName, int &width, int &height, uchar3 * &pixels)
+{
+    FILE * f = fopen(fileName, "r");
+    if (f == NULL)
+    {
+        printf("Cannot read %s\n", fileName);
+        exit(EXIT_FAILURE);
+    }
+
+    char type[3];
+    fscanf(f, "%s", type);
+    
+    if (strcmp(type, "P3") != 0) // In this exercise, we don't touch other types
+    {
+        fclose(f);
+        printf("Cannot read %s\n", fileName); 
+        exit(EXIT_FAILURE); 
+    }
+
+    fscanf(f, "%i", &width);
+    fscanf(f, "%i", &height);
+    
+    int max_val;
+    fscanf(f, "%i", &max_val);
+    if (max_val > 255) // In this exercise, we assume 1 byte per value
+    {
+        fclose(f);
+        printf("Cannot read %s\n", fileName); 
+        exit(EXIT_FAILURE); 
+    }
+
+    pixels = (uchar3 *)malloc(width * height * sizeof(uchar3));
+    for (int i = 0; i < width * height; i++)
+        fscanf(f, "%hhu%hhu%hhu", &pixels[i].x, &pixels[i].y, &pixels[i].z);
+
+    fclose(f);
+}
+
+void writePnm(uchar3 *pixels, int width, int height, int originalWidth, char *fileName)
+{
+    FILE * f = fopen(fileName, "w");
+    if (f == NULL)
+    {
+        printf("Cannot write %s\n", fileName);
+        exit(EXIT_FAILURE);
+    }   
+
+    fprintf(f, "P3\n%i\n%i\n255\n", width, height); 
+
+    for (int r = 0; r < height; ++r) {
+        for (int c = 0; c < width; ++c) {
+            int i = r * originalWidth + c;
+            fprintf(f, "%hhu\n%hhu\n%hhu\n", pixels[i].x, pixels[i].y, pixels[i].z);
+        }
+    }
+    
+    fclose(f);
+}
+
+void convertRgb2Gray_host(uchar3 * rgbPic, int width, int height, uint8_t * grayPic) {
+    for (int r = 0; r < height; ++r) 
+        for (int c = 0; c < width; ++c) {
+            int i = r * width + c;
+            grayPic[i] = 0.299f * rgbPic[i].x + 0.587f * rgbPic[i].y + 0.114f * rgbPic[i].z;
+        }
+}
+
+
+
+__global__ void convertRgb2GrayKernel(uint8_t * inPixels, int width, int height, 
+		uint8_t * outPixels)
+{
+	// TODO
+    // Reminder: gray = 0.299*red + 0.587*green + 0.114*blue  
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;	
+	if (idx < width * height)	
+	{	
+		uint8_t red = inPixels[3 * idx];	
+		uint8_t green = inPixels[3 * idx + 1];	
+		uint8_t blue = inPixels[3 * idx + 2];	
+		outPixels[idx] = 0.299f * red + 0.587f * green + 0.114f * blue;	
+	}
+}
+
+void convertRgb2Gray(uint8_t * inPixels, int width, int height,
+		uint8_t * outPixels, 
+		bool useDevice=false, dim3 blockSize=dim3(1))
+{
+	GpuTimer timer;
+	timer.Start();
+	if (useDevice == false)
+	{
+        // Reminder: gray = 0.299*red + 0.587*green + 0.114*blue  
+        for (int r = 0; r < height; r++)
+        {
+            for (int c = 0; c < width; c++)
+            {
+                int i = r * width + c;
+                uint8_t red = inPixels[3 * i];
+                uint8_t green = inPixels[3 * i + 1];
+                uint8_t blue = inPixels[3 * i + 2];
+                outPixels[i] = 0.299f*red + 0.587f*green + 0.114f*blue;
+            }
+        }
+	}
+	else // use device
+	{
+		cudaDeviceProp devProp;
+		cudaGetDeviceProperties(&devProp, 0);
+		printf("GPU name: %s\n", devProp.name);
+		printf("GPU compute capability: %d.%d\n", devProp.major, devProp.minor);
+
+		// TODO: Allocate device memories
+		int numPixels = width * height;	
+		uint8_t *d_inPixels, *d_outPixels;	
+		cudaMalloc(&d_inPixels, sizeof(uint8_t) * numPixels * 3);	
+		cudaMalloc(&d_outPixels, sizeof(uint8_t) * numPixels);
+		
+		// TODO: Copy data to device memories
+		cudaMemcpy(d_inPixels, inPixels, sizeof(uint8_t) * numPixels * 3, cudaMemcpyHostToDevice);
+		
+		// TODO: Set grid size and call kernel (remember to check kernel error)
+		dim3 gridSize((numPixels + blockSize.x - 1) / blockSize.x);	
+		
+		convertRgb2GrayKernel<<<gridSize, blockSize>>>(d_inPixels, width, height, d_outPixels);
+		cudaDeviceSynchronize();
+		
+		// TODO: Copy result from device memories
+		CHECK(cudaMemcpy(outPixels, d_outPixels, sizeof(uint8_t) * numPixels, cudaMemcpyDeviceToHost));
+
+		// TODO: Free device memories
+		cudaFree(d_inPixels);
+		cudaFree(d_outPixels);
+
+	}
+	timer.Stop();
+	float time = timer.Elapsed();
+	printf("Processing time (%s): %f ms\n\n", 
+			useDevice == true? "use device" : "use host", time);
+}
+
+float computeError(uint8_t * a1, uint8_t * a2, int n)
+{
+	float err = 0;
+	for (int i = 0; i < n; i++)
+		err += abs((int)a1[i] - (int)a2[i]);
+	err /= n;
+	return err;
+}
+
+char * concatStr(const char * s1, const char * s2)
+{
+	char * result = (char *)malloc(strlen(s1) + strlen(s2) + 1);
+	strcpy(result, s1);
+	strcat(result, s2);
+	return result;
+}
 
 /**
  * @param argc[1] name of the input file (.pmn)
@@ -83,10 +322,6 @@ __global__ void calEnergy(uint8_t * inPixels, int width, int height, int * energ
     for (virtualRow = threadIdx.y; virtualRow < s_height; readRow += blockDim.y, virtualRow += blockDim.y) {
         tmpRow = readRow;
 
-        // if (readRow < 0)
-        //     readRow = 0;
-        // else if (readRow >= height) 
-        //     readRow = height - 1;
 
         readRow = min(max(readRow, 0), height - 1);//0 <= readCol <= height-1
         
@@ -95,11 +330,6 @@ __global__ void calEnergy(uint8_t * inPixels, int width, int height, int * energ
 
         for (; virtualCol < s_width; readCol += blockDim.x, virtualCol += blockDim.x) {
             tmpCol = readCol;
-
-            // if (readCol < 0) 
-            //     readCol = 0;
-            // else if (readCol >= width) 
-            //     readCol = width - 1;
 
             readCol = min(max(readCol, 0), width - 1);// 0 <= readCol <= width-1
             
