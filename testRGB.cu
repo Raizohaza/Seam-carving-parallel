@@ -24,6 +24,17 @@ const int filterWidth = 3;
 		exit(EXIT_FAILURE);\
 	}\
 }
+float computeError(uchar3 * a1, uchar3 * a2, int n) {
+    float err = 0;
+    for (int i = 0; i < n; i++) {
+        err += abs((int)a1[i].x - (int)a2[i].x);
+        err += abs((int)a1[i].y - (int)a2[i].y);
+        err += abs((int)a1[i].z - (int)a2[i].z);
+    }
+    err /= (n * 3);
+    return err;
+}
+
 
 void printError(char * msg, uchar3 * in1, uchar3 * in2, int width, int height) {
 	float err = computeError(in1, in2, width * height);
@@ -152,16 +163,6 @@ void convertRgb2Gray_host(uchar3 * rgbPic, int width, int height, uint8_t * gray
         }
 }
 
-float computeError(uchar3 * a1, uchar3 * a2, int n) {
-    float err = 0;
-    for (int i = 0; i < n; i++) {
-        err += abs((int)a1[i].x - (int)a2[i].x);
-        err += abs((int)a1[i].y - (int)a2[i].y);
-        err += abs((int)a1[i].z - (int)a2[i].z);
-    }
-    err /= (n * 3);
-    return err;
-}
 
 
 __global__ void convertRgb2GrayKernel(uint8_t * inPixels, int width, int height, 
