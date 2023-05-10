@@ -50,75 +50,63 @@ struct GpuTimer
 	}
 };
 
-void readPnm(char * fileName, 
-		int &numChannels, int &width, int &height, uint8_t * &pixels)
+void readPnm(char * fileName, int &width, int &height, uchar3 * &pixels)
 {
-	FILE * f = fopen(fileName, "r");
-	if (f == NULL)
-	{
-		printf("Cannot read %s\n", fileName);
-		exit(EXIT_FAILURE);
-	}
+    FILE * f = fopen(fileName, "r");
+    if (f == NULL)
+    {
+        printf("Cannot read %s\n", fileName);
+        exit(EXIT_FAILURE);
+    }
 
-	char type[3];
-	fscanf(f, "%s", type);
-	if (strcmp(type, "P2") == 0)
-		numChannels = 1;
-	else if (strcmp(type, "P3") == 0)
-		numChannels = 3;
-	else // In this exercise, we don't touch other types
-	{
-		fclose(f);
-		printf("Cannot read %s\n", fileName); 
-		exit(EXIT_FAILURE); 
-	}
+    char type[3];
+    fscanf(f, "%s", type);
+    
+    if (strcmp(type, "P3") != 0) // In this exercise, we don't touch other types
+    {
+        fclose(f);
+        printf("Cannot read %s\n", fileName); 
+        exit(EXIT_FAILURE); 
+    }
 
-	fscanf(f, "%i", &width);
-	fscanf(f, "%i", &height);
+    fscanf(f, "%i", &width);
+    fscanf(f, "%i", &height);
+    
+    int max_val;
+    fscanf(f, "%i", &max_val);
+    if (max_val > 255) // In this exercise, we assume 1 byte per value
+    {
+        fclose(f);
+        printf("Cannot read %s\n", fileName); 
+        exit(EXIT_FAILURE); 
+    }
 
-	int max_val;
-	fscanf(f, "%i", &max_val);
-	if (max_val > 255) // In this exercise, we assume 1 byte per value
-	{
-		fclose(f);
-		printf("Cannot read %s\n", fileName); 
-		exit(EXIT_FAILURE); 
-	}
+    pixels = (uchar3 *)malloc(width * height * sizeof(uchar3));
+    for (int i = 0; i < width * height; i++)
+        fscanf(f, "%hhu%hhu%hhu", &pixels[i].x, &pixels[i].y, &pixels[i].z);
 
-	pixels = (uint8_t *)malloc(width * height * numChannels);
-	for (int i = 0; i < width * height * numChannels; i++)
-		fscanf(f, "%hhu", &pixels[i]);
-
-	fclose(f);
+    fclose(f);
 }
 
-void writePnm(uint8_t * pixels, int numChannels, int width, int height, 
-		char * fileName)
+void writePnm(uchar3 *pixels, int width, int height, int originalWidth, char *fileName)
 {
-	FILE * f = fopen(fileName, "w");
-	if (f == NULL)
-	{
-		printf("Cannot write %s\n", fileName);
-		exit(EXIT_FAILURE);
-	}	
+    FILE * f = fopen(fileName, "w");
+    if (f == NULL)
+    {
+        printf("Cannot write %s\n", fileName);
+        exit(EXIT_FAILURE);
+    }   
 
-	if (numChannels == 1)
-		fprintf(f, "P2\n");
-	else if (numChannels == 3)
-		fprintf(f, "P3\n");
-	else
-	{
-		fclose(f);
-		printf("Cannot write %s\n", fileName);
-		exit(EXIT_FAILURE);
-	}
+    fprintf(f, "P3\n%i\n%i\n255\n", width, height); 
 
-	fprintf(f, "%i\n%i\n255\n", width, height); 
-
-	for (int i = 0; i < width * height * numChannels; i++)
-		fprintf(f, "%hhu\n", pixels[i]);
-
-	fclose(f);
+    for (int r = 0; r < height; ++r) {
+        for (int c = 0; c < width; ++c) {
+            int i = r * originalWidth + c;
+            fprintf(f, "%hhu\n%hhu\n%hhu\n", pixels[i].x, pixels[i].y, pixels[i].z);
+        }
+    }
+    
+    fclose(f);
 }
 
 __global__ void convertRgb2GrayKernel(uint8_t * inPixels, int width, int height, 
@@ -220,18 +208,18 @@ int main(int argc, char ** argv)
 
 	// Read input RGB image file
 	int numChannels, width, height;
-	uint8_t * inPixels;
+	uchar3 * inPixels;
 	readPnm(argv[1], numChannels, width, height, inPixels);
 	if (numChannels != 3)
 		return EXIT_FAILURE; // Input image must be RGB
 	printf("Image size (width x height): %i x %i\n\n", width, height);
 
 	// Convert RGB to grayscale not using device
-	uint8_t * correctOutPixels= (uint8_t *)malloc(width * height);
+	uchar3 * correctOutPixels= (uchar3 *)malloc(width * height);
 	convertRgb2Gray(inPixels, width, height, correctOutPixels);
 
 	// Convert RGB to grayscale using device
-	uint8_t * outPixels= (uint8_t *)malloc(width * height);
+	uchar3 * outPixels= (uchar3 *)malloc(width * height);
 	dim3 blockSize(32, 32); // Default
 	if (argc == 5)
 	{
@@ -250,6 +238,7 @@ int main(int argc, char ** argv)
 	writePnm(outPixels, 1, width, height, concatStr(outFileNameBase, "_device.pnm"));
 
 	// Free memories
+	free(correctOutPixels);
 	free(inPixels);
 	free(outPixels);
 }
