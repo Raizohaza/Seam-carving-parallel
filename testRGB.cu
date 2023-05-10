@@ -144,6 +144,26 @@ void writePnm(uchar3 *pixels, int width, int height, int originalWidth, char *fi
     fclose(f);
 }
 
+void convertRgb2Gray_host(uchar3 * rgbPic, int width, int height, uint8_t * grayPic) {
+    for (int r = 0; r < height; ++r) 
+        for (int c = 0; c < width; ++c) {
+            int i = r * width + c;
+            grayPic[i] = 0.299f * rgbPic[i].x + 0.587f * rgbPic[i].y + 0.114f * rgbPic[i].z;
+        }
+}
+
+float computeError(uchar3 * a1, uchar3 * a2, int n) {
+    float err = 0;
+    for (int i = 0; i < n; i++) {
+        err += abs((int)a1[i].x - (int)a2[i].x);
+        err += abs((int)a1[i].y - (int)a2[i].y);
+        err += abs((int)a1[i].z - (int)a2[i].z);
+    }
+    err /= (n * 3);
+    return err;
+}
+
+
 __global__ void convertRgb2GrayKernel(uint8_t * inPixels, int width, int height, 
 		uint8_t * outPixels)
 {
