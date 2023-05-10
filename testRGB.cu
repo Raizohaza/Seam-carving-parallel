@@ -254,55 +254,6 @@ char * concatStr(const char * s1, const char * s2)
 	return result;
 }
 
-// int main(int argc, char ** argv)
-// {	
-// 	if (argc != 4 && argc != 6)
-// 	{
-// 		printf("The number of arguments is invalid\n");
-// 		return EXIT_FAILURE;
-// 	}
-
-// 	// Read input RGB image file
-// 	int numChannels, width, height;
-// 	uchar3 * inPixels;
-// 	int desiredWidth;
-
-// 	readPnm(argv[1], numChannels, width, height, inPixels);
-// 	if (numChannels != 3)
-// 		return EXIT_FAILURE; // Input image must be RGB
-// 	printf("Image size (width x height): %i x %i\n\n", width, height);
-// 	desiredWidth = atoi(argv[3]);
-
-// 	// Convert RGB to grayscale not using device
-// 	uchar3 * correctOutPixels= (uchar3 *)malloc(width * height);
-// 	convertRgb2Gray(inPixels, width, height, correctOutPixels);
-
-// 	// Convert RGB to grayscale using device
-// 	uchar3 * outPixels= (uchar3 *)malloc(width * height);
-// 	dim3 blockSize(32, 32); // Default
-// 	if (argc == 5)
-// 	{
-// 		blockSize.x = atoi(argv[4]);
-// 		blockSize.y = atoi(argv[5]);
-// 	} 
-// 	convertRgb2Gray(inPixels, width, height, outPixels, true, blockSize); 
-
-// 	// Compute mean absolute error between host result and device result
-// 	float err = computeError(outPixels, correctOutPixels, width * height);
-// 	printf("Error between device result and host result: %f\n", err);
-
-// 	// Write results to files
-// 	char * outFileNameBase = strtok(argv[2], "."); // Get rid of extension
-// 	writePnm(correctOutPixels, 1, width, height, concatStr(outFileNameBase, "_host.pnm"));
-// 	writePnm(outPixels, 1, width, height, concatStr(outFileNameBase, "_device.pnm"));
-
-// 	// Free memories
-// 	free(correctOutPixels);
-// 	free(inPixels);
-// 	free(outPixels);
-// }
-
-
 /**
  * @param argc[1] name of the input file (.pmn)
  * @param argc[2] name of output file with no extension, created by using host & device
@@ -371,10 +322,6 @@ __global__ void calEnergy(uint8_t * inPixels, int width, int height, int * energ
     for (virtualRow = threadIdx.y; virtualRow < s_height; readRow += blockDim.y, virtualRow += blockDim.y) {
         tmpRow = readRow;
 
-        // if (readRow < 0)
-        //     readRow = 0;
-        // else if (readRow >= height) 
-        //     readRow = height - 1;
 
         readRow = min(max(readRow, 0), height - 1);//0 <= readCol <= height-1
         
@@ -383,11 +330,6 @@ __global__ void calEnergy(uint8_t * inPixels, int width, int height, int * energ
 
         for (; virtualCol < s_width; readCol += blockDim.x, virtualCol += blockDim.x) {
             tmpCol = readCol;
-
-            // if (readCol < 0) 
-            //     readCol = 0;
-            // else if (readCol >= width) 
-            //     readCol = width - 1;
 
             readCol = min(max(readCol, 0), width - 1);// 0 <= readCol <= width-1
             
