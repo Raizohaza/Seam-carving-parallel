@@ -200,7 +200,7 @@ char * concatStr(const char * s1, const char * s2)
 
 int main(int argc, char ** argv)
 {	
-	if (argc != 3 && argc != 5)
+	if (argc != 4 && argc != 6)
 	{
 		printf("The number of arguments is invalid\n");
 		return EXIT_FAILURE;
@@ -209,10 +209,13 @@ int main(int argc, char ** argv)
 	// Read input RGB image file
 	int numChannels, width, height;
 	uchar3 * inPixels;
+	int desiredWidth;
+
 	readPnm(argv[1], numChannels, width, height, inPixels);
 	if (numChannels != 3)
 		return EXIT_FAILURE; // Input image must be RGB
 	printf("Image size (width x height): %i x %i\n\n", width, height);
+	desiredWidth = atoi(argv[3]);
 
 	// Convert RGB to grayscale not using device
 	uchar3 * correctOutPixels= (uchar3 *)malloc(width * height);
@@ -223,8 +226,8 @@ int main(int argc, char ** argv)
 	dim3 blockSize(32, 32); // Default
 	if (argc == 5)
 	{
-		blockSize.x = atoi(argv[3]);
-		blockSize.y = atoi(argv[4]);
+		blockSize.x = atoi(argv[4]);
+		blockSize.y = atoi(argv[5]);
 	} 
 	convertRgb2Gray(inPixels, width, height, outPixels, true, blockSize); 
 
