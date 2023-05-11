@@ -362,63 +362,7 @@ __global__ void findSeamKernel(int * minimalEnergy, int * leastSignificantPixel,
     }
 }
 
-__global__ void findSeamKernel1(int * minimalEnergy, int * leastSignificantPixel, int width, int height) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x; // tính toán chỉ số cột tương ứng với thread
-    int row = blockIdx.y * blockDim.y + threadIdx.y; // tính toán chỉ số hàng tương ứng với thread
 
-    if (col >= width) return; // nếu chỉ số cột vượt quá kích thước ảnh, thoát
-
-    __shared__ int minCol; // biến chia sẻ minCol
-    __shared__ int minEnergy; // biến chia sẻ minimalEnergy
-    __shared__ int aboveIdx; // biến chia sẻ aboveIdx
-    __shared__ int minColCpy; // biến chia sẻ minColCpy
-    __shared__ int idx; // biến chia sẻ idx
-
-    int r = height - 1;
-
-    if (row == 0) { // chỉ có thread đầu tiên tính toán minCol
-        minCol = 0;
-        minEnergy = minimalEnergy[r * d_WIDTH];
-        for (int c = 1; c < width; ++c) {
-            idx = r * d_WIDTH + c;
-            if (minimalEnergy[idx] < minEnergy) {
-                minEnergy = minimalEnergy[idx];
-                minCol = c;
-            }
-        }
-    }
-
-    __syncthreads(); // đồng bộ hoá tất cả các thread
-
-    for (; r >= 0; --r) {
-        leastSignificantPixel[r] = minCol; // lưu chỉ số cột tối thiểu tại mỗi pixel
-
-        __syncthreads(); // đồng bộ hoá tất cả các thread
-
-        if (r > 0) {
-            aboveIdx = (r - 1) * d_WIDTH + minCol;
-            minEnergy = minimalEnergy[aboveIdx];
-            minColCpy = minCol;
-
-            if (minColCpy > 0) {
-                idx = aboveIdx - 1;
-                if (minimalEnergy[idx] < minEnergy) {
-                    minEnergy = minimalEnergy[idx];
-                    minCol = minColCpy - 1;
-                }
-            }
-
-            if (minColCpy < width - 1) {
-                idx = aboveIdx + 1;
-                if (minimalEnergy[idx] < minEnergy) {
-                    minCol = minColCpy + 1;
-                }
-            }
-        }
-
-        __syncthreads(); // đồng bộ hoá tất cả các thread
-   }  
-}
 
 __global__ void carvingKernel1(int * leastSignificantPixel, uchar3 * outPixels, uint8_t *grayPixels, int * energy, int width) {
     int row = blockIdx.x;
