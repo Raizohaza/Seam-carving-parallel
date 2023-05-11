@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
-
+#define BLOCK_SIZE 32
+#define THREADS_PER_BLOCK 256
 using namespace std;
 
 
@@ -77,7 +78,7 @@ struct GpuTimer
 	{
 		cudaEventRecord(start, 0);                                                                 
 		cudaEventSynchronize(start);
-	}
+}
 
 	void Stop()
 	{
@@ -199,7 +200,6 @@ void checkInput(int argc, char ** argv, int &width, int &height, uchar3 * &rgbPi
 
     WIDTH = width;
     CHECK(cudaMemcpyToSymbol(d_WIDTH, &width, sizeof(int)));
-
     // Check user's desired width
     desiredWidth = atoi(argv[3]);
 
@@ -246,8 +246,6 @@ __global__ void calEnergy(uint8_t * inPixels, int width, int height, int * energ
 
     for (virtualRow = threadIdx.y; virtualRow < s_height; readRow += blockDim.y, virtualRow += blockDim.y) {
         tmpRow = readRow;
-
-
         readRow = min(max(readRow, 0), height - 1);//0 <= readCol <= height-1
         
         readCol = firstReadCol;
@@ -255,7 +253,6 @@ __global__ void calEnergy(uint8_t * inPixels, int width, int height, int * energ
 
         for (; virtualCol < s_width; readCol += blockDim.x, virtualCol += blockDim.x) {
             tmpCol = readCol;
-
             readCol = min(max(readCol, 0), width - 1);// 0 <= readCol <= width-1
             
             s_inPixels[virtualRow * s_width + virtualCol] = inPixels[readRow * d_WIDTH + readCol];
@@ -322,6 +319,147 @@ __global__ void energyToTheEndKernel(int * energy, int * minimalEnergy, int widt
                 minimalEnergy[idx] = min + energy[idx];
             }
         }
+        __syncthreads();
+    }
+}
+__global__ void findSeamKernel(int * minimalEnergy, int * leastSignificantPixel, int width, int height) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x; // tính toán chỉ số cột tương ứng với thread
+    int row = blockIdx.y * blockDim.y + threadIdx.y; // tính toán chỉ số hàng tương ứng với thread
+
+    if (col >= width) return; // nếu chỉ số cột vượt quá kích thước ảnh, thoát
+
+    int minCol = 0, r = height - 1;
+
+    if (row == 0) { // chỉ có thread đầu tiên tính toán minCol
+        for (int c = 1; c < width; ++c) {
+            if (minimalEnergy[r * d_WIDTH + c] < minimalEnergy[r * d_WIDTH + minCol]) {
+                minCol = c;
+            }
+        }
+    }
+
+    __syncthreads(); // đồng bộ hoá tất cả các thread
+
+    for (; r >= 0; --r) {
+        leastSignificantPixel[r] = minCol; // lưu chỉ số cột tối thiểu tại mỗi pixel
+
+        __syncthreads(); // đồng bộ hoá tất cả các thread
+
+        if (r > 0) {
+            int aboveIdx = (r - 1) * d_WIDTH + minCol;
+            int min = minimalEnergy[aboveIdx], minColCpy = minCol;
+
+            if (minColCpy > 0 && minimalEnergy[aboveIdx - 1] < min) {
+                min = minimalEnergy[aboveIdx - 1];
+                minCol = minColCpy - 1;
+            }
+
+            if (minColCpy < width - 1 && minimalEnergy[aboveIdx + 1] < min) {
+                minCol = minColCpy + 1;
+            }
+        }
+
+        __syncthreads(); // đồng bộ hoá tất cả các thread
+    }
+}
+
+__global__ void findSeamKernel1(int * minimalEnergy, int * leastSignificantPixel, int width, int height) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x; // tính toán chỉ số cột tương ứng với thread
+    int row = blockIdx.y * blockDim.y + threadIdx.y; // tính toán chỉ số hàng tương ứng với thread
+
+    if (col >= width) return; // nếu chỉ số cột vượt quá kích thước ảnh, thoát
+
+    __shared__ int minCol; // biến chia sẻ minCol
+    __shared__ int minEnergy; // biến chia sẻ minimalEnergy
+    __shared__ int aboveIdx; // biến chia sẻ aboveIdx
+    __shared__ int minColCpy; // biến chia sẻ minColCpy
+    __shared__ int idx; // biến chia sẻ idx
+
+    int r = height - 1;
+
+    if (row == 0) { // chỉ có thread đầu tiên tính toán minCol
+        minCol = 0;
+        minEnergy = minimalEnergy[r * d_WIDTH];
+        for (int c = 1; c < width; ++c) {
+            idx = r * d_WIDTH + c;
+            if (minimalEnergy[idx] < minEnergy) {
+                minEnergy = minimalEnergy[idx];
+                minCol = c;
+            }
+        }
+    }
+
+    __syncthreads(); // đồng bộ hoá tất cả các thread
+
+    for (; r >= 0; --r) {
+        leastSignificantPixel[r] = minCol; // lưu chỉ số cột tối thiểu tại mỗi pixel
+
+        __syncthreads(); // đồng bộ hoá tất cả các thread
+
+        if (r > 0) {
+            aboveIdx = (r - 1) * d_WIDTH + minCol;
+            minEnergy = minimalEnergy[aboveIdx];
+            minColCpy = minCol;
+
+            if (minColCpy > 0) {
+                idx = aboveIdx - 1;
+                if (minimalEnergy[idx] < minEnergy) {
+                    minEnergy = minimalEnergy[idx];
+                    minCol = minColCpy - 1;
+                }
+            }
+
+            if (minColCpy < width - 1) {
+                idx = aboveIdx + 1;
+                if (minimalEnergy[idx] < minEnergy) {
+                    minCol = minColCpy + 1;
+                }
+            }
+        }
+
+        __syncthreads(); // đồng bộ hoá tất cả các thread
+    }
+}
+
+__global__ void carvingKernel1(int * leastSignificantPixel, uchar3 * outPixels, uint8_t *grayPixels, int * energy, int width) {
+    int row = blockIdx.x;
+    int leastSignificant = leastSignificantPixel[row];
+
+    // Update pixels only for threads whose index is within the range of leastSignificant to width - 1
+    for (int i = leastSignificant + threadIdx.x; i < width - 1; i += blockDim.x) {
+        int baseIdx = row * d_WIDTH + i;
+        outPixels[baseIdx] = outPixels[baseIdx + 1];
+        grayPixels[baseIdx] = grayPixels[baseIdx + 1];
+        energy[baseIdx] = energy[baseIdx + 1];
+    }
+}
+__global__ void carvingKernel2(int * leastSignificantPixel, uchar3 * outPixels, uint8_t *grayPixels, int * energy, int width) {
+    __shared__ uchar3 sharedOutPixels[BLOCK_SIZE];
+    __shared__ uint8_t sharedGrayPixels[BLOCK_SIZE];
+    __shared__ int sharedEnergy[BLOCK_SIZE];
+
+    int row = blockIdx.x;
+    int baseIdx = row * d_WIDTH;
+    int leastSignificant = leastSignificantPixel[row];
+
+
+    for (int i = leastSignificant + threadIdx.x; i < width - 1; i += blockDim.x) {
+        int idx = baseIdx + i;
+
+        // Copy a row of data into shared memory
+        sharedOutPixels[threadIdx.x] = outPixels[idx + 1];
+        sharedGrayPixels[threadIdx.x] = grayPixels[idx + 1];
+        sharedEnergy[threadIdx.x] = energy[idx + 1];
+
+        __syncthreads();
+
+        // Compute values for the current row using the shared data
+        if (i < width - 1) {
+            outPixels[idx] = sharedOutPixels[threadIdx.x];
+            grayPixels[idx] = sharedGrayPixels[threadIdx.x];
+            energy[idx] = sharedEnergy[threadIdx.x];
+        }
+
         __syncthreads();
     }
 }
@@ -477,7 +615,7 @@ void hostResizing(uchar3 * inPixels, int width, int height, int desiredWidth, uc
 
 //device
 
-void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, uchar3 * outPixels, dim3 blockSize) {
+void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, uchar3 * outPixels, dim3 blockSize, int kernelcheck) {
     GpuTimer timer;
     timer.Start();
 
@@ -529,14 +667,65 @@ void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, 
         }
 
         // find least significant pixel index of each row and store in d_leastSignificantPixel (SEQUENTIAL, in kernel or host)
-        CHECK(cudaMemcpy(minimalEnergy, d_minimalEnergy, WIDTH * height * sizeof(int), cudaMemcpyDeviceToHost));
-        findSeam(minimalEnergy, leastSignificantPixel, width, height);
+        // CHECK(cudaMemcpy(minimalEnergy, d_minimalEnergy, WIDTH * height * sizeof(int), cudaMemcpyDeviceToHost));
+        // findSeam(minimalEnergy, leastSignificantPixel, width, height);
 
-        // carve
-        CHECK(cudaMemcpy(d_leastSignificantPixel, leastSignificantPixel, height * sizeof(int), cudaMemcpyHostToDevice));
-        carvingKernel<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
-        cudaDeviceSynchronize();
-        CHECK(cudaGetLastError());
+        int numThreadsPerBlock = 256;
+        int numBlocks = (width + numThreadsPerBlock - 1) / numThreadsPerBlock;
+        // carve    
+        // CHECK(cudaMemcpy(d_leastSignificantPixel, leastSignificantPixel, height * sizeof(int), cudaMemcpyHostToDevice));
+        switch(kernelcheck){
+            case 0:
+                findSeamKernel<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                carvingKernel<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                break;
+            case 1:
+                findSeamKernel1<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                carvingKernel<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                break;
+            case 2:
+                findSeamKernel<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                carvingKernel1<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                break;
+            case 3:
+                findSeamKernel1<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                carvingKernel1<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                break;
+            case 4:
+                findSeamKernel<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                carvingKernel2<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                break;
+            case 5:
+                findSeamKernel1<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                carvingKernel2<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
+                cudaDeviceSynchronize();
+                CHECK(cudaGetLastError());
+                break;
+                            
+        }
+
         
         --width;
     }
@@ -554,7 +743,9 @@ void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, 
     free(energy);
 
     timer.Stop();
-    timer.printTime((char *)"device");   
+    timer.printTime((char*)"device");
+
+   
 }
 
 int main(int argc, char ** argv) {   
@@ -572,17 +763,51 @@ int main(int argc, char ** argv) {
 
     // DEVICE
     uchar3 * out_device = (uchar3 *)malloc(width * height * sizeof(uchar3));
-    deviceResizing(rgbPic, width, height, desiredWidth, out_device, blockSize);
+    uchar3 * out_device1 = (uchar3 *)malloc(width * height * sizeof(uchar3));
+    uchar3 * out_device2 = (uchar3 *)malloc(width * height * sizeof(uchar3));
+    uchar3 * out_device3 = (uchar3 *)malloc(width * height * sizeof(uchar3));
+    uchar3 * out_device4 = (uchar3 *)malloc(width * height * sizeof(uchar3));
+    uchar3 * out_device5 = (uchar3 *)malloc(width * height * sizeof(uchar3));
+    printf("Device 0 ");
+    deviceResizing(rgbPic, width, height, desiredWidth, out_device, blockSize,0);
+    printf("Device 1 ");
+    deviceResizing(rgbPic, width, height, desiredWidth, out_device2, blockSize,2);
+    printf("Device 2 ");
+    deviceResizing(rgbPic, width, height, desiredWidth, out_device4, blockSize,4);
+    printf("Device 0-2 ");
+    deviceResizing(rgbPic, width, height, desiredWidth, out_device1, blockSize,1);
+    printf("Device 1-2 ");
+    deviceResizing(rgbPic, width, height, desiredWidth, out_device3, blockSize,3);
+    printf("Device 2-2 ");
+    deviceResizing(rgbPic, width, height, desiredWidth, out_device5, blockSize,5);
+
+
 
     // Compute error
-    printError((char * )"Error between device result and host result: ", out_host, out_device, width, height);
+    printError((char * )"Error between device 0 result and host result: ", out_host, out_device, width, height);
+    printError((char * )"Error between device 1 result and host result: ", out_host, out_device2, width, height);
+    printError((char * )"Error between device 2 result and host result: ", out_host, out_device4, width, height);
+    printError((char * )"Error between device 0-2 result and host result: ", out_host, out_device1, width, height);
+    printError((char * )"Error between device 1-2 result and host result: ", out_host, out_device3, width, height);
+    printError((char * )"Error between device 2-2 result and host result: ", out_host, out_device5, width, height);
+
 
     // Write 2 results to files
     writePnm(out_host, desiredWidth, height, width, concatStr(argv[2], "_host.pnm"));
     writePnm(out_device, desiredWidth, height, width, concatStr(argv[2], "_device.pnm"));
+    writePnm(out_device1, desiredWidth, height, width, concatStr(argv[2], "_device1.pnm"));
+    writePnm(out_device2, desiredWidth, height, width, concatStr(argv[2], "_device2.pnm"));
+    writePnm(out_device3, desiredWidth, height, width, concatStr(argv[2], "_device3.pnm"));
+    writePnm(out_device4, desiredWidth, height, width, concatStr(argv[2], "_device4.pnm"));
+    writePnm(out_device5, desiredWidth, height, width, concatStr(argv[2], "_device5.pnm"));
 
     // Free memories
     free(rgbPic);
     free(out_host);
     free(out_device);
+    free(out_device1);
+    free(out_device2);
+    free(out_device3);
+    free(out_device4);
+    free(out_device5);
 }
