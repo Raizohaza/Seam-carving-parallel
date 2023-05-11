@@ -669,7 +669,6 @@ void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, 
         int numBlocks = (width + numThreadsPerBlock - 1) / numThreadsPerBlock;
         // carve    
         if (mode == 0){
- 
                 findSeamKernel<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
                 cudaDeviceSynchronize();
                 CHECK(cudaGetLastError());
@@ -684,9 +683,7 @@ void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, 
                 carvingKernel2<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
                 cudaDeviceSynchronize();
                 CHECK(cudaGetLastError());
-        }
-
-        
+        }      
         --width;
     }
 

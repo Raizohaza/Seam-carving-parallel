@@ -1,14 +1,10 @@
 # Seam Carving - Image resizing with CUDA
 
-<img src="./screenshots/amal-unsplash.jpg">
-
 # Description
 
 -   A final project in Parallel Programming Class (University of Science).
 -   Using Nvidia GPU to optimize algorithm and reduce time in image processing. The main program was written in C and C++.
--   All details can be found in [colab](https://drive.google.com/file/d/1dcvAxTy_HCh1ey9BEAvTwMfo_a3yOU0x/view?usp=sharing "Google Colab") file.
--   Only 1 version was developed.
--   Note: This is a demonstration, not a real-world application.
+-   All details can be found in [colab](https://colab.research.google.com/drive/1I-PuYMntpChxKrDzLMTAzzkqRfDhCpxL "Google Colab") file.
 
 # Table of contents
 
@@ -27,8 +23,7 @@ To view pnm images, install [IrfanView](https://www.irfanview.com/)
 
 There are 2 ways to use:
 
--   Easy way: go to this [colab file](https://drive.google.com/file/d/1dcvAxTy_HCh1ey9BEAvTwMfo_a3yOU0x/view?usp=sharing "Google Colab"), that's all!
--   Hard way: Download **./seam-carving.ipynb** only, it is the same as colab file in easy way. Upload it to your drive and you are good to go.
+-  [colab file](https://colab.research.google.com/drive/1I-PuYMntpChxKrDzLMTAzzkqRfDhCpxL "Google Colab")
 
 # Screenshots
 
@@ -47,13 +42,13 @@ Small errors when resizing large image, don't know where is the bug
 
 # Contributors
 
--   Tran Tuan Kiet (Group leader)
--   Nguyen Duc Thang
--   Le Thanh Loc
+* Phạm Minh Toàn
+
+* Phạm Phong Phú Cường
 
 # References
 
-[Slides from teacher Phạm Trọng Nghĩa]("https://drive.google.com/drive/folders/19_KM-2h6aa5OE8wDsM6kk5THcPHfKLjS" "Drive")
+[Slides from teacher Phạm Trọng Nghĩa]("Drive")
 
 [Wikipedia - Seam Carving]("https://en.wikipedia.org/wiki/Seam_carving" "wikipedia")
 
