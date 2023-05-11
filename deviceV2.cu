@@ -684,7 +684,6 @@ void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, 
                 carvingKernel2<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
                 cudaDeviceSynchronize();
                 CHECK(cudaGetLastError());
-                break;     
         }
 
         
