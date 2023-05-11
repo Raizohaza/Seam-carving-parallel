@@ -614,7 +614,7 @@ void hostResizing(uchar3 * inPixels, int width, int height, int desiredWidth, uc
 
 //device
 
-void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, uchar3 * outPixels, dim3 blockSize, int kernelcheck) {
+void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, uchar3 * outPixels, dim3 blockSize, int mode) {
     GpuTimer timer;
     timer.Start();
 
@@ -665,64 +665,26 @@ void deviceResizing(uchar3 * inPixels, int width, int height, int desiredWidth, 
             CHECK(cudaGetLastError());
         }
 
-        // find least significant pixel index of each row and store in d_leastSignificantPixel (SEQUENTIAL, in kernel or host)
-        // CHECK(cudaMemcpy(minimalEnergy, d_minimalEnergy, WIDTH * height * sizeof(int), cudaMemcpyDeviceToHost));
-        // findSeam(minimalEnergy, leastSignificantPixel, width, height);
-
         int numThreadsPerBlock = 256;
         int numBlocks = (width + numThreadsPerBlock - 1) / numThreadsPerBlock;
         // carve    
-        // CHECK(cudaMemcpy(d_leastSignificantPixel, leastSignificantPixel, height * sizeof(int), cudaMemcpyHostToDevice));
-        switch(kernelcheck){
-            case 0:
+        if (mode == 0){
+ 
                 findSeamKernel<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
                 cudaDeviceSynchronize();
                 CHECK(cudaGetLastError());
                 carvingKernel<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
                 cudaDeviceSynchronize();
                 CHECK(cudaGetLastError());
-                break;
-            // case 1:
-            //     findSeamKernel1<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
-            //     cudaDeviceSynchronize();
-            //     CHECK(cudaGetLastError());
-            //     carvingKernel<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
-            //     cudaDeviceSynchronize();
-            //     CHECK(cudaGetLastError());
-            //     break;
-            // case 2:
-            //     findSeamKernel<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
-            //     cudaDeviceSynchronize();
-            //     CHECK(cudaGetLastError());
-            //     carvingKernel1<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
-            //     cudaDeviceSynchronize();
-            //     CHECK(cudaGetLastError());
-            //     break;
-            // case 3:
-            //     findSeamKernel1<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
-            //     cudaDeviceSynchronize();
-            //     CHECK(cudaGetLastError());
-            //     carvingKernel1<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
-            //     cudaDeviceSynchronize();
-            //     CHECK(cudaGetLastError());
-            //     break;
-            case 4:
+        }
+        if (mode == 1){
                 findSeamKernel<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
                 cudaDeviceSynchronize();
                 CHECK(cudaGetLastError());
                 carvingKernel2<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
                 cudaDeviceSynchronize();
                 CHECK(cudaGetLastError());
-                break;
-            // case 5:
-            //     findSeamKernel1<<<numBlocks, numThreadsPerBlock>>>(d_minimalEnergy, d_leastSignificantPixel, width, height);
-            //     cudaDeviceSynchronize();
-            //     CHECK(cudaGetLastError());
-            //     carvingKernel2<<<height, 1>>>(d_leastSignificantPixel, d_inPixels, d_grayPixels, d_energy, width);
-            //     cudaDeviceSynchronize();
-            //     CHECK(cudaGetLastError());
-            //     break;
-                            
+                break;     
         }
 
         
@@ -762,51 +724,25 @@ int main(int argc, char ** argv) {
 
     // DEVICE
     uchar3 * out_device = (uchar3 *)malloc(width * height * sizeof(uchar3));
-    // uchar3 * out_device1 = (uchar3 *)malloc(width * height * sizeof(uchar3));
-    // uchar3 * out_device2 = (uchar3 *)malloc(width * height * sizeof(uchar3));
-    // uchar3 * out_device3 = (uchar3 *)malloc(width * height * sizeof(uchar3));
-    uchar3 * out_device4 = (uchar3 *)malloc(width * height * sizeof(uchar3));
-    // uchar3 * out_device5 = (uchar3 *)malloc(width * height * sizeof(uchar3));
-    printf("Device 0 ");
+    uchar3 * out_deviceV2 = (uchar3 *)malloc(width * height * sizeof(uchar3));
+    printf("Device  ");
     deviceResizing(rgbPic, width, height, desiredWidth, out_device, blockSize,0);
-    printf("Device 1 ");
-    // deviceResizing(rgbPic, width, height, desiredWidth, out_device2, blockSize,2);
-    printf("Device 2 ");
-    deviceResizing(rgbPic, width, height, desiredWidth, out_device4, blockSize,4);
-    // printf("Device 0-2 ");
-    // deviceResizing(rgbPic, width, height, desiredWidth, out_device1, blockSize,1);
-    // printf("Device 1-2 ");
-    // deviceResizing(rgbPic, width, height, desiredWidth, out_device3, blockSize,3);
-    // printf("Device 2-2 ");
-    // deviceResizing(rgbPic, width, height, desiredWidth, out_device5, blockSize,5);
-
-
+    printf("Device v2 ");
+    deviceResizing(rgbPic, width, height, desiredWidth, out_deviceV2, blockSize,1);
 
     // Compute error
     printError((char * )"Error between device 0 result and host result: ", out_host, out_device, width, height);
-    // printError((char * )"Error between device 1 result and host result: ", out_host, out_device2, width, height);
-    printError((char * )"Error between device 2 result and host result: ", out_host, out_device4, width, height);
-    // printError((char * )"Error between device 0-2 result and host result: ", out_host, out_device1, width, height);
-    // printError((char * )"Error between device 1-2 result and host result: ", out_host, out_device3, width, height);
-    // printError((char * )"Error between device 2-2 result and host result: ", out_host, out_device5, width, height);
-
+    printError((char * )"Error between device v2 result and host result: ", out_host, out_deviceV2, width, height);
 
     // Write 2 results to files
     writePnm(out_host, desiredWidth, height, width, concatStr(argv[2], "_host.pnm"));
     writePnm(out_device, desiredWidth, height, width, concatStr(argv[2], "_device.pnm"));
-    // writePnm(out_device1, desiredWidth, height, width, concatStr(argv[2], "_device1.pnm"));
-    // writePnm(out_device2, desiredWidth, height, width, concatStr(argv[2], "_device2.pnm"));
-    // writePnm(out_device3, desiredWidth, height, width, concatStr(argv[2], "_device3.pnm"));
-    writePnm(out_device4, desiredWidth, height, width, concatStr(argv[2], "_device4.pnm"));
-    // writePnm(out_device5, desiredWidth, height, width, concatStr(argv[2], "_device5.pnm"));
+
+    writePnm(out_deviceV2, desiredWidth, height, width, concatStr(argv[2], "_deviceV2.pnm"));
 
     // Free memories
     free(rgbPic);
     free(out_host);
     free(out_device);
-    // free(out_device1);
-    // free(out_device2);
-    // free(out_device3);
-    free(out_device4);
-    // free(out_device5);
+    free(out_deviceV2);
 }
