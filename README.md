@@ -21,7 +21,7 @@
 
 To view pnm images, install [IrfanView](https://www.irfanview.com/)
 
-There are 2 ways to use:
+How to use:
 
 -  [colab file](https://colab.research.google.com/drive/1I-PuYMntpChxKrDzLMTAzzkqRfDhCpxL "Google Colab")
 
@@ -31,14 +31,7 @@ There are 2 ways to use:
 | ---------------------------------------------------------- | ---------------------------------------------------------------- |
 | <img src="./screenshots/broadcast_tower.jpg" height="170"> | <img src="./screenshots/broadcast_tower_after.jpg" height="170"> |
 | <img src="./screenshots/clock.jpg" height="400">           | <img src="./screenshots/clock_after.jpg" height="400">           |
-| <img src="./screenshots/cat.jpg" height="200">             | <img src="./screenshots/cat_after.jpg" height="200">             |
 | <img src="./screenshots/elephant.jpg" height="300">        | <img src="./screenshots/elephant_after.jpg" height="300">        |
-| <img src="./screenshots/snail.jpg" height="200">           | <img src="./screenshots/snail_after.jpg" height="200">           |
-| <img src="./screenshots/lady.jpg" height="300">            | <img src="./screenshots/lady_after.jpg" height="300">            |
-
-# Have not achieved
-
-Small errors when resizing large image, don't know where is the bug
 
 # Contributors
 
