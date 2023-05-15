@@ -6,17 +6,6 @@
 -   Using Nvidia GPU to optimize algorithm and reduce time in image processing. The main program was written in C and C++.
 -   All details can be found in [colab](https://colab.research.google.com/drive/1I-PuYMntpChxKrDzLMTAzzkqRfDhCpxL "Google Colab") file.
 
-# Table of contents
-
-0. Introduction
-1. Main idea
-2. Convert from RGB to Grayscale
-3. Convolution
-4. Calculate the energy of each pixels using _gradient magnitude_
-5. Find low energy seams
-6. Remove low-energy seams
-7. Demonstration with images
-
 # Usage
 
 To view pnm images, install [IrfanView](https://www.irfanview.com/)
